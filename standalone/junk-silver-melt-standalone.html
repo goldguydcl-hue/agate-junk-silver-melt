@@ -1,0 +1,351 @@
+<!doctype html>
+<!--
+  Junk Silver Melt Calculator — standalone embeddable calculator
+  ==============================================================
+  A single self-contained HTML file (no dependencies, no build step).
+  Drop it onto any web page as-is, or embed it in an <iframe>.
+
+  THEME (per Joe, Nov 20, 2026): LIGHT. White page background, dark navy
+  text, gold accents only (headers, buttons, key numbers) — built to sit
+  cleanly on agatemetals.com and bullionpricecheck.com, both light sites.
+  The Reddit Devvit app keeps the gold-on-navy Reddit look; this file does
+  not share its theme.
+
+  HOW TO EMBED
+  1. Save this file on your site (e.g. /junk-silver-melt-calculator.html)
+     and link to it, or paste its contents into an <iframe src="...">.
+  2. No API key is needed. Prices come from gold-api.com first, then
+     Yahoo Finance, then the built-in reference price below.
+
+  NOTES
+  - Yahoo Finance does not send CORS headers, so browsers usually block
+    that leg. gold-api.com does allow browser requests, so it carries the
+    live prices in practice. Any leg that fails is skipped silently.
+  - Built-in reference price is the verified Nov 20, 2026 silver spot
+    ($42.05/ozt, Bullion Price Check / gold-api.com, 2026-11-20T06:52:04Z).
+    It only shows when every live leg fails. Update it when it goes stale.
+  - Pure silver per coin is computed from the coin spec (gross weight in
+    grams x fineness / 31.1034768 g per troy oz). Sources: Numista types
+    52 (dime), 45 (War Nickel), 10865 (40% Kennedy half); Bullion Price
+    Check junk calculator (0.7234 ozt per $1 face of 90% coinage, 0.29584
+    ozt per $1 face of 40% halves, 0.05626 ozt per War Nickel); BPC
+    product_spec for the Morgan dollar (0.77345 ozt) and NGC's melt table
+    (0.7734 ozt). The $1-face rule does NOT apply to Morgan/Peace dollars.
+  - All figures are estimates only — not quotes, not financial advice.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Junk Silver Melt Calculator — What's your old silver coinage worth?</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #ffffff; color: #0a1a2e; }
+  .jsm { max-width: 560px; margin: 0 auto; padding: 16px; min-height: 100vh; display: flex; flex-direction: column; }
+  .jsm header { text-align: center; }
+  .jsm .kicker { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.25em; color: #9a7b1e; margin: 0; }
+  .jsm h1 { font-size: 1.5rem; line-height: 1.2; margin: 6px 0 0; color: #0a1a2e; }
+  .jsm .ticker { display: inline-flex; align-items: center; gap: 8px; margin-top: 12px; padding: 8px 16px; border: 1px solid rgba(154,123,30,.45); border-radius: 999px; background: #fdf8e7; }
+  .jsm .ticker .price { font-size: 1.1rem; font-weight: 700; color: #9a7b1e; }
+  .jsm .ticker .badge { background: #d4af37; color: #0a1a2e; border-radius: 999px; padding: 2px 8px; font-size: 0.65rem; font-weight: 700; }
+  .jsm .updated { font-size: 0.72rem; color: #64748b; margin: 6px 0 0; }
+  .jsm .card { background: #ffffff; color: #0a1a2e; border: 1px solid #e2e8f0; border-radius: 16px; padding: 16px; margin-top: 16px; box-shadow: 0 2px 12px rgba(10,26,46,.08); }
+  .jsm .card h2 { font-size: 0.85rem; font-weight: 700; letter-spacing: .05em; margin: 0; color: #0a1a2e; }
+  .jsm .card-head { display: flex; align-items: center; justify-content: space-between; }
+  .jsm .clear { cursor: pointer; border: 0; background: transparent; font-size: 0.85rem; font-weight: 600; color: #64748b; text-decoration: underline; }
+  .jsm .coin { border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; margin-top: 12px; }
+  .jsm .coin-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+  .jsm .coin-name { font-weight: 700; line-height: 1.25; }
+  .jsm .coin-detail { font-size: 0.75rem; color: #64748b; margin-top: 2px; }
+  .jsm .stepper { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+  .jsm .stepper button { cursor: pointer; border: 0; border-radius: 999px; padding: 6px 11px; font-size: 0.9rem; font-weight: 700; }
+  .jsm .stepper .minus { background: #e2e8f0; color: #0a1a2e; }
+  .jsm .stepper .plus { background: #d4af37; color: #0a1a2e; }
+  .jsm .stepper input { width: 60px; padding: 6px 8px; font-size: 1.1rem; font-weight: 600; text-align: center; border: 1px solid #cbd5e1; border-radius: 8px; outline: none; color: #0a1a2e; }
+  .jsm .stepper input:focus { border-color: #d4af37; }
+  .jsm .coin-melt { font-size: 0.85rem; color: #475569; margin: 6px 0 0; }
+  .jsm .coin-melt b { color: #0a1a2e; }
+  .jsm .totals { background: #fdf8e7; border: 1px solid #d4af37; }
+  .jsm .totals .kicker2 { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.2em; color: #9a7b1e; text-align: center; margin: 0; }
+  .jsm .totals .big { font-size: 2rem; font-weight: 700; text-align: center; margin: 4px 0 0; color: #0a1a2e; }
+  .jsm .totals .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; text-align: center; }
+  .jsm .totals .stat { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 4px; }
+  .jsm .totals .stat .lbl { font-size: 0.65rem; font-weight: 700; letter-spacing: .05em; color: #64748b; }
+  .jsm .totals .stat .val { font-size: 1rem; font-weight: 700; margin-top: 2px; }
+  .jsm .totals .note { font-size: 0.72rem; font-weight: 600; color: #64748b; text-align: center; margin: 8px 0 0; }
+  .jsm .percoin { list-style: none; margin: 8px 0 0; padding: 0; font-size: 0.9rem; }
+  .jsm .percoin li { display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px solid #f1f5f9; padding: 6px 0; }
+  .jsm .percoin li:last-child { border-bottom: 0; }
+  .jsm .percoin .oz { color: #64748b; }
+  .jsm .percoin b { color: #0a1a2e; }
+  .jsm .fineprint { font-size: 0.75rem; line-height: 1.5; color: #64748b; margin: 8px 0 0; }
+  .jsm footer { margin-top: 20px; padding-bottom: 8px; text-align: center; font-size: 0.72rem; line-height: 1.6; color: #64748b; }
+  .jsm footer a { color: #9a7b1e; }
+  .jsm .err { margin-top: 16px; border: 1px solid #fca5a5; background: #fef2f2; color: #991b1b; border-radius: 12px; padding: 12px; text-align: center; font-size: 0.9rem; }
+  .jsm .err button { cursor: pointer; margin-top: 8px; border: 0; border-radius: 999px; background: #d4af37; color: #0a1a2e; padding: 8px 16px; font-size: 0.85rem; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="jsm">
+  <header>
+    <p class="kicker">AGATE METALS &bull; LIVE REFERENCE</p>
+    <h1>Junk Silver Melt Calculator</h1>
+    <div class="ticker">
+      <span class="price" id="jsm-price">Loading silver price&hellip;</span>
+      <span class="badge" id="jsm-source">LIVE</span>
+    </div>
+    <p class="updated" id="jsm-updated">Fetching the live silver price</p>
+  </header>
+
+  <div class="err" id="jsm-error" hidden>
+    <b>Couldn&rsquo;t load the live silver price.</b><br />
+    Check your connection and try again.
+    <br /><button id="jsm-retry" type="button">Try again</button>
+  </div>
+
+  <section class="card" aria-label="Your coins">
+    <div class="card-head">
+      <h2>YOUR COINS</h2>
+      <button class="clear" id="jsm-clear" type="button">Clear all</button>
+    </div>
+    <div id="jsm-coins"></div>
+  </section>
+
+  <section class="card totals" aria-label="Totals">
+    <p class="kicker2">TOTAL MELT VALUE</p>
+    <p class="big" id="jsm-melt">&mdash;</p>
+    <div class="stats">
+      <div class="stat"><div class="lbl">FACE VALUE</div><div class="val" id="jsm-face">&mdash;</div></div>
+      <div class="stat"><div class="lbl">PURE SILVER</div><div class="val" id="jsm-oz">&mdash;</div></div>
+      <div class="stat"><div class="lbl">COINS</div><div class="val" id="jsm-count">&mdash;</div></div>
+    </div>
+    <p class="note" id="jsm-refnote" hidden>Showing the built-in reference price &mdash; live sources are unavailable right now.</p>
+  </section>
+
+  <section class="card" aria-label="Melt per coin">
+    <h2>MELT PER COIN AT TODAY&rsquo;S PRICE</h2>
+    <ul class="percoin" id="jsm-percoin"></ul>
+    <p class="fineprint">Values use each coin&rsquo;s full mint spec. Circulated coins weigh slightly less &mdash; the worn-coin convention is 0.715 troy oz of pure silver per $1 face of 90% coinage, versus 0.7234 oz unworn.</p>
+  </section>
+
+  <footer>
+    <p>All figures are estimates based on the live silver reference price &mdash; not quotes, and not financial advice.</p>
+    <p>Spot price via <a href="https://api.gold-api.com/" rel="nofollow">gold-api.com</a> &middot; <a href="https://agatepreciousmetals.com/terms.html">Terms</a> &middot; <a href="https://agatepreciousmetals.com/privacy.html">Privacy</a> &middot; <a href="https://agatemetals.com/">agatemetals.com</a></p>
+  </footer>
+</div>
+
+<script>
+'use strict';
+/* Pure silver per coin = gross weight (g) x fineness / 31.1034768 g per troy oz.
+   Sources: Numista types 52 / 45 / 10865; Bullion Price Check junk calculator
+   and Morgan product_spec; NGC melt table. See the header comment. */
+var TROY_OZ_GRAMS = 31.1034768;
+var REFERENCE_SILVER_PRICE = 42.05; // USD/ozt, verified Nov 20 2026 (BPC / gold-api.com)
+var COINS = [
+  { key: 'dime90', label: '90% Silver Dime', detail: 'Mercury / Roosevelt, 1964 & earlier', faceValue: 0.10, grossWeightGrams: 2.5, fineness: 0.90 },
+  { key: 'quarter90', label: '90% Silver Quarter', detail: 'Washington, 1964 & earlier', faceValue: 0.25, grossWeightGrams: 6.25, fineness: 0.90 },
+  { key: 'half90', label: '90% Silver Half Dollar', detail: 'Walking Liberty / Franklin / Kennedy 1964', faceValue: 0.50, grossWeightGrams: 12.5, fineness: 0.90 },
+  { key: 'dollar90', label: 'Morgan & Peace Dollar', detail: '90% silver dollar, 1878–1935', faceValue: 1.00, grossWeightGrams: 26.73, fineness: 0.90 },
+  { key: 'half40', label: '40% Kennedy Half Dollar', detail: 'Kennedy, 1965–1970', faceValue: 0.50, grossWeightGrams: 11.5, fineness: 0.40 },
+  { key: 'warNickel', label: '35% War Nickel', detail: 'Jefferson, 1942–1945', faceValue: 0.05, grossWeightGrams: 5, fineness: 0.35 }
+];
+
+function pureSilverOzPerCoin(coin) {
+  return (coin.grossWeightGrams * coin.fineness) / TROY_OZ_GRAMS;
+}
+function meltPerCoin(coin, silverPrice) {
+  return pureSilverOzPerCoin(coin) * silverPrice;
+}
+function calcTotals(quantities, silverPrice) {
+  var face = 0, oz = 0, count = 0;
+  for (var i = 0; i < COINS.length; i++) {
+    var qty = quantities[COINS[i].key] || 0;
+    if (!isFinite(qty) || qty < 0) qty = 0;
+    face += COINS[i].faceValue * qty;
+    oz += pureSilverOzPerCoin(COINS[i]) * qty;
+    count += qty;
+  }
+  return { totalFaceValue: face, totalPureSilverOz: oz, meltValue: oz * silverPrice, coinCount: count };
+}
+function formatUsd(value) {
+  return value.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function formatOz(value) {
+  return value.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+}
+
+/* Price chain: gold-api.com -> Yahoo Finance -> built-in reference price. */
+function fetchJson(url, timeoutMs) {
+  return new Promise(function (resolve) {
+    var done = false;
+    var timer = setTimeout(function () { if (!done) { done = true; resolve(null); } }, timeoutMs);
+    fetch(url, { headers: { 'User-Agent': 'AgateJunkSilverMelt/1.0' } })
+      .then(function (res) { if (!res.ok) throw new Error('http ' + res.status); return res.json(); })
+      .then(function (data) { if (!done) { done = true; clearTimeout(timer); resolve(data); } })
+      .catch(function () { if (!done) { done = true; clearTimeout(timer); resolve(null); } });
+  });
+}
+function loadSilverPrice() {
+  return fetchJson('https://api.gold-api.com/price/XAG', 5000).then(function (data) {
+    if (data && typeof data.price === 'number' && isFinite(data.price)) {
+      return { price: data.price, source: 'gold-api' };
+    }
+    return fetchJson('https://query1.finance.yahoo.com/v8/finance/chart/SI=F?range=1d&interval=1m', 5000).then(function (yd) {
+      var meta = yd && yd.chart && Array.isArray(yd.chart.result) && yd.chart.result[0] ? yd.chart.result[0].meta : null;
+      var p = meta ? meta.regularMarketPrice : null;
+      if (typeof p === 'number' && isFinite(p)) return { price: p, source: 'yahoo' };
+      return { price: REFERENCE_SILVER_PRICE, source: 'reference' };
+    });
+  });
+}
+
+/* DOM wiring — skipped when there is no document (Node smoke test). */
+var quantities = {};
+var silverPrice = null;
+var silverSource = null;
+
+function render(price) {
+  var totals = calcTotals(quantities, price);
+  document.getElementById('jsm-melt').textContent = formatUsd(totals.meltValue);
+  document.getElementById('jsm-face').textContent = '$' + totals.totalFaceValue.toFixed(2);
+  document.getElementById('jsm-oz').textContent = formatOz(totals.totalPureSilverOz) + ' oz';
+  document.getElementById('jsm-count').textContent = String(totals.coinCount);
+  var rows = document.querySelectorAll('#jsm-coins .coin');
+  for (var i = 0; i < rows.length; i++) {
+    var coin = COINS[i];
+    var qty = quantities[coin.key] || 0;
+    var meltEl = rows[i].querySelector('.coin-melt');
+    var per = meltPerCoin(coin, price);
+    meltEl.innerHTML = qty > 0
+      ? qty + ' &times; ' + formatUsd(per) + ' melt each = <b>' + formatUsd(per * qty) + '</b>'
+      : 'Melt each: ' + formatUsd(per);
+  }
+  var perList = document.getElementById('jsm-percoin');
+  perList.innerHTML = '';
+  for (var j = 0; j < COINS.length; j++) {
+    var c = COINS[j];
+    var li = document.createElement('li');
+    var name = document.createElement('span');
+    name.innerHTML = c.label + ' <span class="oz">(' + formatOz(pureSilverOzPerCoin(c)) + ' oz)</span>';
+    var val = document.createElement('b');
+    val.textContent = formatUsd(meltPerCoin(c, price));
+    li.appendChild(name);
+    li.appendChild(val);
+    perList.appendChild(li);
+  }
+}
+
+function buildCoinRows() {
+  var host = document.getElementById('jsm-coins');
+  host.innerHTML = '';
+  COINS.forEach(function (coin) {
+    quantities[coin.key] = 0;
+    var row = document.createElement('div');
+    row.className = 'coin';
+    var top = document.createElement('div');
+    top.className = 'coin-top';
+    var info = document.createElement('div');
+    var name = document.createElement('div');
+    name.className = 'coin-name';
+    name.textContent = coin.label;
+    var detail = document.createElement('div');
+    detail.className = 'coin-detail';
+    detail.textContent = coin.detail + ' \u2022 ' + formatOz(pureSilverOzPerCoin(coin)) + ' oz pure silver each';
+    info.appendChild(name);
+    info.appendChild(detail);
+    var stepper = document.createElement('div');
+    stepper.className = 'stepper';
+    var minus = document.createElement('button');
+    minus.type = 'button';
+    minus.className = 'minus';
+    minus.textContent = '\u2212';
+    minus.setAttribute('aria-label', 'One fewer ' + coin.label);
+    var input = document.createElement('input');
+    input.type = 'number';
+    input.inputMode = 'numeric';
+    input.min = '0';
+    input.step = '1';
+    input.value = '';
+    input.placeholder = '0';
+    input.setAttribute('aria-label', 'Quantity of ' + coin.label);
+    var plus = document.createElement('button');
+    plus.type = 'button';
+    plus.className = 'plus';
+    plus.textContent = '+';
+    plus.setAttribute('aria-label', 'One more ' + coin.label);
+    var sync = function () {
+      input.value = quantities[coin.key] > 0 ? String(quantities[coin.key]) : '';
+      if (silverPrice !== null) render(silverPrice);
+    };
+    minus.addEventListener('click', function () {
+      quantities[coin.key] = Math.max(0, quantities[coin.key] - 1);
+      sync();
+    });
+    plus.addEventListener('click', function () {
+      quantities[coin.key] = quantities[coin.key] + 1;
+      sync();
+    });
+    input.addEventListener('input', function () {
+      var n = parseInt(input.value, 10);
+      quantities[coin.key] = isFinite(n) && n > 0 ? n : 0;
+      if (silverPrice !== null) render(silverPrice);
+    });
+    stepper.appendChild(minus);
+    stepper.appendChild(input);
+    stepper.appendChild(plus);
+    top.appendChild(info);
+    top.appendChild(stepper);
+    var melt = document.createElement('p');
+    melt.className = 'coin-melt';
+    melt.textContent = 'Melt each: \u2014';
+    row.appendChild(top);
+    row.appendChild(melt);
+    host.appendChild(row);
+  });
+}
+
+function showPrice(result) {
+  silverPrice = result.price;
+  silverSource = result.source;
+  var priceEl = document.getElementById('jsm-price');
+  var sourceEl = document.getElementById('jsm-source');
+  var updatedEl = document.getElementById('jsm-updated');
+  priceEl.textContent = 'Silver ' + formatUsd(result.price) + ' / oz';
+  sourceEl.textContent = result.source === 'reference' ? 'REFERENCE PRICE' : 'LIVE';
+  updatedEl.textContent = 'Updated ' + new Date().toLocaleTimeString('en-US', { hour12: false }) +
+    (result.source === 'reference' ? ' \u2022 reference price' : ' \u2022 refreshes every 60 seconds');
+  document.getElementById('jsm-refnote').hidden = result.source !== 'reference';
+  document.getElementById('jsm-error').hidden = true;
+  render(result.price);
+}
+
+function init() {
+  buildCoinRows();
+  document.getElementById('jsm-clear').addEventListener('click', function () {
+    COINS.forEach(function (coin) { quantities[coin.key] = 0; });
+    var inputs = document.querySelectorAll('#jsm-coins .coin input');
+    for (var i = 0; i < inputs.length; i++) inputs[i].value = '';
+    if (silverPrice !== null) render(silverPrice);
+  });
+  var refresh = function () {
+    loadSilverPrice().then(function (result) {
+      showPrice(result);
+    }).catch(function () {
+      document.getElementById('jsm-error').hidden = false;
+    });
+  };
+  document.getElementById('jsm-retry').addEventListener('click', refresh);
+  refresh();
+  setInterval(refresh, 60000);
+}
+
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+}
+</script>
+</body>
+</html>
